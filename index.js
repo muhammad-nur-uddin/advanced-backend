@@ -3,7 +3,9 @@ import dotenv from "dotenv"
 import connectDb from "./lib/db.js"
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai"
 import { ChatGroq } from "@langchain/groq"
-import { Annotation, StateGraph } from "@langchain/langgraph"
+import { Annotation, MemorySaver, MessagesAnnotation, StateGraph } from "@langchain/langgraph"
+import { ToolNode } from "@langchain/langgraph/prebuilt";
+import { TavilySearch } from "@langchain/tavily";
 
 dotenv.config()
 
@@ -21,46 +23,81 @@ app.listen(port, () => {
     console.log(`server is runnig at port ${port}`)
 })
 
+const storage = new MemorySaver()
+
+const tool = new TavilySearch({
+    maxResults: 5,
+    topic: "general",
+});
+
+const tools = [tool]
+
+const toolNode = new ToolNode(tools)
+
 const llm = new ChatGroq({
     model: "openai/gpt-oss-120b",
     apiKey: process.env.GROQ_API_KEY,
-    temperature: 0.7
-});
+    temperature: 0.7,
+    // maxTokens: 100,
+    maxRetries: 2
+}).bindTools(tools);
 
 
 
-
-const State = Annotation.Root({
-    prompt: Annotation,
-    aiMsg: Annotation
-})
 
 const callLLM = async (state) => {
     console.log("state:", state)
     const response = await llm.invoke([
         {
             role: "system",
-            content: "You are a helpful assistant. Your name is jarvis. If you don't know the answer, say sorry, I am unable to provide or whatever suitable",
+            content: `You are Jarvis AI assistant
+
+Use conversation memory first.
+
+Only use tools when the answer requires
+external real-time information like:
+weather, news, web search, stock prices etc.
+
+Do NOT call tools for simple conversation,
+memory-based questions, greetings,
+or personal context`
         },
-        { role: "human", content: state.prompt },
+        ...state.messages,
     ]);
-    return { aiMsg: response.content }
+    return { messages: [response] }
 }
 
-const graph = new StateGraph(State)
+const shouldContinue = async (state) => {
+    const lastMessage = state.messages[state.messages.length - 1]
+    if (lastMessage.tool_calls.length > 0) {
+        return "tools"
+    } else {
+        return "__end__"
+    }
+}
+
+const graph = new StateGraph(MessagesAnnotation)
     .addNode("agent", callLLM)
+    .addNode("tools", toolNode)
     .addEdge("__start__", "agent")
-    .addEdge("agent", "__end__")
-    .compile()
+    .addEdge("tools", "agent")
+    .addConditionalEdges("agent", shouldContinue)
+    .compile({ checkpointer: storage })
 
 app.post("/ai", async (req, res) => {
     const { input } = req.body;
 
-    const response = await graph.invoke({ prompt: input })
-    console.log(response)
+    const response = await graph.invoke({
+        messages: [{
+            role: "human",
+            content: input
+        }]
+    }, { configurable: { thread_id: "user123" } })
+    console.log(response.messages[response.messages.length - 1].content)
 
-    return res.status(200).json({ "ai": response });
+    return res.status(200).json({ "ai": response.messages[response.messages.length - 1].content });
 });
+
 /**
  * Date : 30.09.2026
  * Topic : LangGraph
