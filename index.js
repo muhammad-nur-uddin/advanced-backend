@@ -6,6 +6,8 @@ import { ChatGroq } from "@langchain/groq"
 import { Annotation, MemorySaver, MessagesAnnotation, StateGraph } from "@langchain/langgraph"
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { TavilySearch } from "@langchain/tavily";
+import fs from "fs"
+import { PDFParse } from "pdf-parse"
 
 dotenv.config()
 
@@ -83,6 +85,15 @@ const graph = new StateGraph(MessagesAnnotation)
     .addEdge("tools", "agent")
     .addConditionalEdges("agent", shouldContinue)
     .compile({ checkpointer: storage })
+
+const upload = async () => {
+    const pdfPath = "./knowledge.pdf"
+    const buffer = fs.readFileSync(pdfPath)
+    const pdfResult = await (await new PDFParse({ data: buffer }).getText()).text
+    console.log(pdfResult)
+}
+
+upload()
 
 app.post("/ai", async (req, res) => {
     const { input } = req.body;

@@ -16,9 +16,11 @@
     "@langchain/groq": "^1.3.1",
     "@langchain/langgraph": "^1.4.18",
     "@langchain/tavily": "^1.2.0",
+    "@langchain/textsplitters": "^1.0.2",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "mongoose": "^9.9.4",
-    "nodemon": "^3.1.14"
+    "nodemon": "^3.1.14",
+    "pdf-parse": "^2.4.5"
   }
 }
