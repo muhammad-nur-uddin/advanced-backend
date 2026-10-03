@@ -9,6 +9,9 @@ import { TavilySearch } from "@langchain/tavily";
 import fs from "fs"
 import { PDFParse } from "pdf-parse"
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters"
+import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
+import { TaskType } from "@google/generative-ai";
+import { QdrantVectorStore } from "@langchain/qdrant"
 
 dotenv.config()
 
@@ -87,19 +90,35 @@ const graph = new StateGraph(MessagesAnnotation)
     .addConditionalEdges("agent", shouldContinue)
     .compile({ checkpointer: storage })
 
+const embeddings = new GoogleGenerativeAIEmbeddings({
+    model: "gemini-embedding-001", // 768 dimensions
+    taskType: TaskType.RETRIEVAL_DOCUMENT,
+    title: "Document title",
+});
+
+const vectorStore = await QdrantVectorStore.fromExistingCollection(embeddings, {
+    url: process.env.QDRANT_URL,
+    apiKey: process.env.QDRANT_API_KEY,
+    collectionName: "my-grocery-store",
+});
+
 const upload = async () => {
     const pdfPath = "./knowledge.pdf"
     const buffer = fs.readFileSync(pdfPath)
     const pdfResult = await (await new PDFParse({ data: buffer }).getText()).text
-    
+
     const docs = await new RecursiveCharacterTextSplitter({
         chunkSize: 1000,
         chunkOverlap: 200
     }).createDocuments([pdfResult])
     console.log(docs)
+    
+    await vectorStore.addDocuments(docs)
 }
 
 upload()
+
+
 
 app.post("/ai", async (req, res) => {
     const { input } = req.body;
